@@ -16,6 +16,13 @@ compute time -- for the reference path and for the session, at several batch siz
 here is streams x channels: the codec is channel-independent, so a 16-channel array is a
 batch of 16.
 
+The `speedup` column is the least trustworthy number printed here. The reference path is
+launch-bound -- several hundred kernel launches per frame against the session's one -- so
+any host-side contention taxes it much harder than it taxes the session, and the ratio
+comes out flattering. Absolute ms/frame is the number to reason from; it can only be
+inflated by a busy machine, never deflated. Record `nvidia-smi --query-gpu=clocks.sm`
+alongside a run if the card may not have ramped from its idle clock.
+
 `--split` additionally times the encoder and decoder halves apart, which is what you want
 when the two run on different machines: the sensor encodes and ships 2400 bits/s/channel,
 something else decodes. Each half is its own captured graph, so the two timings do not
