@@ -138,8 +138,8 @@ repository and checkpoint, which are not redistributed here; pass `--biocodec-re
 
 `model.streaming_step()` is the reference implementation and is what the tests check
 against, but it is not how you would deploy this. At one frame per step the codec is
-**launch-bound, not compute-bound**: a frame costs ~6.4 ms on an RTX PRO 6000, and 64
-channels batched together cost 7.2 ms — 64× the arithmetic for 13% more time. The 6.4 ms
+**launch-bound, not compute-bound**: a frame costs ~5.6 ms on an RTX PRO 6000, and 64
+channels batched together cost 6.3 ms — 64× the arithmetic for 14% more time. The 5.6 ms
 is several hundred tiny CUDA kernels plus three `.item()` calls per frame in the
 quantizer's variable-bitrate bookkeeping.
 
@@ -165,15 +165,15 @@ channels (`tools/bench_streaming.py --bench`).
 > 2355 MHz against a 2430 MHz maximum, i.e. 97% — the card is fully ramped and clock state
 > contributes at most ~3%.
 >
-> Run-to-run spread across repeated idle runs is about 1% on the fused step and about 4% on
-> the halves, so treat the third digit as noise.
+> Run-to-run spread across repeated idle runs is about 1% on the fused step and about 0.5%
+> on the halves, measured across independent single-session processes.
 >
 > **The speedup column is the soft number.** The reference path is launch-bound — several
 > hundred kernel launches per frame against the session's one — so host contention taxes it
 > far harder than it taxes the session, and any measurement on a busy machine inflates the
 > ratio. We measured this rather than assuming it: on a contended host the same code read
 > 13.5× at batch 1, and on this idle one it reads 12.0×. The absolute latencies moved
-> hardly at all (the session path by 2%); it was the reference that got faster. Quote the
+> hardly at all (the session path by 0.6%); it was the reference that got faster. Quote the
 > latency budget; treat the ratio as approximate.
 
 | batch | path | ms/frame | p99 | RTF | real-time streams |

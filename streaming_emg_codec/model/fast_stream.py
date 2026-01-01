@@ -1,8 +1,8 @@
 """Low-latency streaming inference.
 
 At one frame per step the codec is not compute-bound -- it is *launch*-bound. A single
-frame costs about 6.4 ms on an RTX PRO 6000, and 64 channels batched together cost 7.2 ms:
-64x the arithmetic for 13% more time. What that 6.4 ms actually buys is several hundred
+frame costs about 5.6 ms on an RTX PRO 6000, and 64 channels batched together cost 6.3 ms:
+64x the arithmetic for 14% more time. What that 5.6 ms actually buys is several hundred
 tiny CUDA kernels (16 transformer layers x ~30 launches, plus the quantizer), each a few
 microseconds of launch overhead with the GPU idle in between, plus three `.item()` calls in
 the quantizer that flush the pipeline on every frame.
