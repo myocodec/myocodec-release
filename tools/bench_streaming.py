@@ -23,6 +23,10 @@ comes out flattering. Absolute ms/frame is the number to reason from; it can onl
 inflated by a busy machine, never deflated. Record `nvidia-smi --query-gpu=clocks.sm`
 alongside a run if the card may not have ramped from its idle clock.
 
+Each configuration is timed with no other session resident: see `_release`. Measuring
+several sessions in one process without that inflates the later ones systematically, which
+is easy to mistake for run-to-run spread.
+
 `--split` additionally times the encoder and decoder halves apart, which is what you want
 when the two run on different machines: the sensor encodes and ships 2400 bits/s/channel,
 something else decodes. Each half is its own captured graph, so the two timings do not
@@ -119,6 +123,27 @@ def verify(cfg, model, args, dev):
               f"[{'EXACT' if m == 1.0 else 'MISMATCH'}]")
 
 
+def _release(sess):
+    """Drop a session and its CUDA graph pool before timing the next configuration.
+
+    A captured graph holds a private memory pool for the life of the session. Leaving
+    several alive perturbs every later measurement on the same device -- measurably, and
+    always upward: leaving nine sessions resident inflated the split timings by ~4.5% and a
+    heavier case by 13%. Left unreleased this reads as run-to-run noise when it is a
+    systematic bias, so the benchmark must free each one rather than rely on scope exit.
+    """
+    if sess is None:
+        return
+    for attr in ("_graphs", "_fns", "_kc", "_vc", "_rings"):
+        if hasattr(sess, attr):
+            setattr(sess, attr, {})
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+
+
 def timed(fn, n, warm, dev):
     for _ in range(warm):
         fn()
@@ -173,6 +198,7 @@ def bench_split(cfg, model, args, dev):
                 sess.step_decode(codes)
             rows.append(("encode", tag, timed(lambda: sess.step_encode(x), args.iters, args.warmup, dev)))
             rows.append(("decode", tag, timed(lambda: sess.step_decode(codes), args.iters, args.warmup, dev)))
+            _release(sess)
 
         for half, tag, (mean, p50, p99) in rows:
             print(f"{batch:>5} {half:>8} {tag:>18} {mean:>9.3f} {p50:>8.3f} {p99:>8.3f} "
@@ -215,6 +241,7 @@ def bench(cfg, model, args, dev):
             rtf = frame_ms / mean
             print(f"{batch:>5} {label:>24} {mean:>9.3f} {p50:>8.3f} {p99:>8.3f} "
                   f"{rtf:>9.1f} {rtf * batch:>8.0f} {base / mean:>7.1f}x")
+            _release(locals().get("sess"))
         print()
     if dev.type == "cuda":
         print(f"peak GPU memory: {torch.cuda.max_memory_allocated() / 1e6:.1f} MB")

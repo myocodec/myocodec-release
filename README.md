@@ -198,20 +198,29 @@ its own captured graph and its own stream position:
 
 | batch | half | reference | session | session + compile | RTF (compile) | p99 |
 |---:|---|---:|---:|---:|---:|---:|
-| 1 | encode | 3.070 | 0.442 | **0.264** | **75.8** | 0.273 |
-| 1 | decode | 2.616 | 0.369 | **0.242** | **82.6** | 0.253 |
+| 1 | encode | 3.060 | 0.433 | **0.253** | **79.1** | 0.265 |
+| 1 | decode | 2.650 | 0.359 | **0.229** | **87.3** | 0.243 |
 | 16 | encode | 3.385 | 0.589 | 0.350 | 57.1 | 0.360 |
 | 16 | decode | 2.927 | 0.544 | 0.322 | 62.1 | 0.334 |
 | 64 | encode | 3.380 | 0.711 | 0.507 | 39.4 | 0.587 |
 | 64 | decode | 2.950 | 0.646 | 0.469 | 42.6 | 0.547 |
 
-(ms per frame, same conditions as above; **11.6× encode, 10.8× decode** at batch 1.) The halves are near-symmetric,
+> The batch-16 and batch-64 rows were taken before a defect in the benchmark harness was
+> found and are biased **upward by a few percent**; they are being re-measured. A
+> `StreamingSession` holds a private CUDA graph memory pool for its lifetime, and the
+> harness used to time several configurations in one process without releasing them, so
+> whichever measurement ran last was inflated — 4.5% at batch 1, and 13% in a case holding
+> more sessions. The batch-1 row above is clean: it comes from single-session-per-process
+> runs, reproduced to three digits by two independent protocols. `tools/bench_streaming.py`
+> now frees each session between configurations; see `_release` there.
+
+(ms per frame, same conditions as above; **12.1× encode, 11.6× decode** at batch 1.) The halves are near-symmetric,
 which is what the parameter counts predict — 6.34 M each side. Splitting is close to free: an
 alternating encode-then-decode pair measures **0.467 ms against 0.464 ms fused, about 1%**.
 
 Do not estimate that cost by adding the two half-timings above — they are measured in
 isolation, each in its own tight loop, so the sum double-counts per-call overhead that the
-alternating pattern amortises. The sum says 0.481 ms and would have you believe splitting
+alternating pattern amortises. The sum says 0.482 ms and would have you believe splitting
 costs 4%; measured back to back it costs 1%.
 
 **The fast path is bitwise identical to the reference** — not approximately, not
