@@ -225,6 +225,17 @@ isolation, each in its own tight loop, so the sum double-counts per-call overhea
 alternating pattern amortises. The sum says 0.482 ms and would have you believe splitting
 costs 4%; measured back to back it costs 1%.
 
+Read the 1% as an **upper bound**. Both sides of it were timed in processes holding three
+captured graphs, identically, so the comparison is sound — but a per-replay overhead does
+not cancel in a ratio when one side replays once and the other twice, which biases it
+upward. The true figure is at or below 1%; a minimal-residency measurement, one graph per
+process, is pending.
+
+And note what the 1% is a cost *of*: two captured graphs against one, on one card in one
+process. It prices the extra graph launch and nothing else. Splitting the **model** is
+nearly free; splitting a **deployment** additionally pays whatever link sits between the
+sensor and the decoder, which this does not measure.
+
 **The fast path is bitwise identical to the reference** — not approximately, not
 token-exact, but `recon_rel_l2 == 0.0` at every batch size tested. Two things make that
 true. The steady-state key set is exactly `W+1` keys, all of which pass both the causal and
