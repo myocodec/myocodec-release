@@ -154,7 +154,16 @@ for frame in stream:                       # [B, C, 40] at 2 kHz
 ```
 
 Measured on one RTX PRO 6000 Blackwell, fp32 weights, bf16 KV cache, batch = streams ×
-channels (`tools/bench_streaming.py --bench`):
+channels (`tools/bench_streaming.py --bench`).
+
+> **The card was concurrently training other jobs.** Contention only ever adds time, so
+> every per-frame figure below is an **upper bound** and every real-time factor a **lower
+> bound** — the true idle-card numbers are at least this good. We report the pessimistic
+> measurement rather than wait for an empty machine, because the claim it supports (far
+> faster than real time) survives the pessimism. Re-run `--bench --split` on an idle card
+> if you need the tight numbers; the one direction this reasoning can fail is an idle card
+> sitting at a low clock state, so check `nvidia-smi --query-gpu=clocks.sm` if your result
+> comes out slower rather than faster.
 
 | batch | path | ms/frame | p99 | RTF | real-time streams |
 |---:|---|---:|---:|---:|---:|
@@ -183,7 +192,8 @@ its own captured graph and its own stream position:
 | 64 | encode | 3.838 | 0.713 | 0.510 | 39.2 |
 | 64 | decode | 3.373 | 0.648 | 0.484 | 41.3 |
 
-(ms per frame; **13.2× encode, 12.4× decode** at batch 1.) The halves are near-symmetric,
+(ms per frame, same contended card and therefore the same upper-bound caveat;
+**13.2× encode, 12.4× decode** at batch 1.) The halves are near-symmetric,
 which is what the parameter counts predict — 6.34 M each side. Their sum, 0.507 ms, is
 slightly above the fused `step()` at 0.470 ms: two graph launches instead of one. Splitting
 costs about 8%, so fuse when both halves run on the same device.
