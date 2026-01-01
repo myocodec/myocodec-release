@@ -202,18 +202,23 @@ its own captured graph and its own stream position:
 |---:|---|---:|---:|---:|---:|---:|
 | 1 | encode | 2.876 | 0.430 | **0.253** | **79.1** | 0.262 |
 | 1 | decode | 2.462 | 0.356 | **0.229** | **87.3** | 0.240 |
-| 16 | encode | 3.100 | 0.592 | 0.357–0.398 | 50.3–56.0 | 0.407 |
-| 16 | decode | 2.698 | 0.546 | 0.326–0.368 | 54.3–61.3 | 0.378 |
+| 16 | encode | 3.100 | 0.592 | 0.350–0.398 | 50.3–57.1 | 0.407 |
+| 16 | decode | 2.698 | 0.546 | 0.322–0.369 | 54.2–62.1 | 0.378 |
 | 64 | encode | 3.195 | 0.716 | 0.513 | 39.0 | 0.590 |
 | 64 | decode | 2.778 | 0.650 | 0.478 | 41.8 | 0.553 |
 
 > **Why batch 16 is a range.** With `compile=True` at that shape, Inductor's autotuning
 > settles on one of two kernel sets that differ by about 14% in sustained use, and which one
-> it picks varies between otherwise identical runs. Five measurements gave encode
-> 0.350, 0.357, 0.389, 0.397, 0.398 — two clusters, not a continuum. Batch 1 and batch 64
-> are stable to about 1%, and the uncompiled `session` column is stable at every batch, so
-> this is autotune selection rather than measurement noise. A point estimate here would be
-> a coin flip presented as a number.
+> it picks varies between otherwise identical runs. Nine cold-cache runs gave encode
+> 0.350, 0.355, 0.357, 0.389, 0.390, 0.391, 0.394, 0.397, 0.398 — two clusters, not a
+> continuum, with 3 of 9 landing in the fast one.
+>
+> This is autotune *selection*, not measurement noise and not contention: batch 1 and batch
+> 64 are stable to about 1%, the uncompiled `session` column is stable at every batch, and
+> four of the nine runs were taken on a completely idle machine (both GPUs at 0%, no other
+> process) and still split across both clusters. A point estimate here would be a coin flip
+> presented as a number. If you need the fast kernels, autotune more than once and keep the
+> cache that wins — `TORCHINDUCTOR_CACHE_DIR` makes that reproducible.
 
 (ms per frame, same conditions as above; **12.1× encode, 11.6× decode** at batch 1.) The halves are near-symmetric,
 which is what the parameter counts predict — 6.34 M each side. Splitting is close to free: an
