@@ -1,0 +1,96 @@
+# StreEMG pretraining -- STAGE 1 of 2: generator only, no discriminator instantiated.
+#
+# Stage 1 and stage 2 differ ONLY in batch size and step budget. Architecture, losses,
+# optimizer and discriminator schedule are identical between the two files, so the
+# transition at 100k steps changes the objective and nothing else.
+#
+# Paths below are relative and are meant to be overridden, e.g.
+#   python -m streaming_emg_codec.train --config configs/pretrain_stage1.yaml \
+#     --override data.root=/path/to/shards --override train.output_dir=/path/to/checkpoints
+model:
+  sample_rate: 2000
+  frame_size: 40                 # 2000/40 = 50 Hz frame rate
+  channels: null                 # channel-count agnostic: channels fold into the batch dim
+  encoder:
+    n_embd: 256
+    n_heads: 8
+    head_dim: 32                 # n_heads * head_dim == n_embd
+    n_layers: 8
+    n_hidden: 1024
+    dropout_rate: 0.0
+    window_size: 64              # in FRAMES: 64 @ 50 Hz = 1.28 s per layer, ~10 s of
+                                 # receptive field over 8 layers
+    rotary_base: 10000.0
+  decoder:
+    n_embd: 256
+    n_heads: 8
+    head_dim: 32
+    n_layers: 8
+    n_hidden: 1024
+    dropout_rate: 0.0
+    window_size: 64
+    rotary_base: 10000.0
+  rvq:
+    num_codebooks: 6             # 6 x log2(256) = 48 bits/frame = 2400 bits/s/channel
+    codebook_size: 256
+    embedding_dim: 32            # quantisation itself is nearly free; the cost is in the
+                                 # learned projection down to this width, so it is not
+                                 # narrowed further
+    commitment_weight: 0.25
+    revive_every: 250
+    codebook_init: randn         # uniform(+-1/codebook_size) puts every entry at the origin
+    dead_code_restart: true
+    dead_criteria: 0.9
+    counts_decay: 0.99
+    rotation_trick: false
+data:
+  kind: shards
+  root: data/shards              # output of streaming_emg_codec.data.extract_shards
+  sample_rate: 2000
+  channels: 1
+  window_seconds: 5.0
+  split: train
+  batch_size: 1024               # GENERATOR-ONLY phase: the discriminator does not exist
+                                 # until step 100k, so this phase uses the memory it will
+                                 # later need. Measured generator-only occupancy on a 96 GB
+                                 # card: 192 -> 12.5% | 512 -> 32.6% | 1024 -> 64.9% |
+                                 # 1536 -> 97.2%. 1024 is a clean power of two at 64.9%.
+  num_workers: 8
+loss:
+  spectral_weight: 1.0
+  vq_weight: 1.0
+  commit_weight: 0.25
+  stft_fft_sizes: [64, 128, 256]
+discriminator:
+  enabled: true                  # declared here but inert: start_step is past max_steps
+  start_step: 100000
+  ramp_steps: 50000
+  lr: 0.0001
+  weight_decay: 0.0001
+  grad_clip: 1.0
+  adversarial_weight: 0.1
+  feature_matching_weight: 2.0
+  periods: [2, 3, 5, 7, 11]
+  mpd_base_filters: 8
+  mpd_max_filters: 128
+  stft_filters: 16
+  stft_max_filters: 128
+  stft_fft_sizes: [64, 128, 256, 512]
+  stft_hop_lengths: [17, 31, 67, 131]
+  stft_win_lengths: [64, 128, 256, 512]
+train:
+  device: cuda
+  seed: 1337
+  optimizer: muon                # Muon on 2-D hidden matrices, AdamW on codebooks,
+                                 # input/output projections and all 1-D parameters
+  lr: 0.0003                     # AdamW group
+  muon_lr: 0.02                  # Muon group
+  weight_decay: 0.01
+  max_steps: 100000              # stage 1 ends exactly where the discriminator ramp begins
+  log_every: 25
+  save_every: 5000
+  output_dir: checkpoints/streemg
+  grad_clip: 1.0
+  use_amp: true
+  max_gpu_memory_gb: 90.0        # hard cap; the trainer raises rather than letting the
+                                 # allocator grow into another process. See README.

@@ -1,0 +1,17 @@
+# Core (training and evaluation)
+torch>=2.4
+numpy>=1.24
+scipy>=1.11
+h5py>=3.9
+PyYAML>=6.0
+muon-optimizer>=0.1        # provides SingleDeviceMuonWithAuxAdam; only needed for optimizer: muon
+
+# Optional
+wandb>=0.16                # only if train.wandb.enabled
+flash-attn>=2.5            # optional fast path; the model falls back to torch SDPA, which
+                           # reproduces the same sliding-window causal mask
+
+# Corpus preparation only (streaming_emg_codec/data/build_corpus.py and its readers)
+wfdb>=4.1                  # Hyser, GRABMyo (.dat)
+pandas>=2.0                # putEMG (.hdf5)
+tables>=3.9                # pandas HDF5 backend for putEMG
