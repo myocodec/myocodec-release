@@ -254,19 +254,21 @@ Two settings worth knowing:
   steady-state frame, and its fused kernels are not the reference's. It is off by default
   for that reason.
 
-Peak memory at batch 1, with the weights resident (50.9 MB of each total below):
+Peak memory at batch 1, with the weights resident (50.9 MB of each total). Each
+configuration measured in its own process, so no other session's graph pool is counted:
 
 | path | steady state | including one-off setup |
 |---|---:|---:|
 | reference | 118 MB | 118 MB |
 | session | 194 MB | 194 MB |
-| session + `compile=True` | 227 MB | **328 MB** |
+| session + `compile=True` | 194 MB | 194 MB, or 295 MB on a first compile |
 
-The steady-state overhead over the reference is the CUDA graph's private pool holding the
-captured intermediates. Note the last column: `compile=True` transiently needs ~100 MB more
-than it settles at, while Inductor autotunes and the graph is captured, and a deployment
-has to survive that peak even though it never pays it again. At batch 64 the session needs
-about 5.8 GB against the reference's 3.0 GB.
+The ~76 MB over the reference is the CUDA graph's private pool holding the captured
+intermediates, and compiling adds nothing to it — Inductor fuses kernels but the pool holds
+a similar set of intermediates either way. The one exception is a *first* compile, where
+Inductor's autotuning transiently needs about 100 MB more; once its cache is warm that
+disappears, so a deployment pays it once per machine, not per process. At batch 64 the
+session needs about 5.8 GB against the reference's 3.0 GB.
 
 ## Checkpoint
 
