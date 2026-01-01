@@ -162,7 +162,27 @@ channels (`tools/bench_streaming.py --bench`):
 | 64 | session | 1.371 | 1.478 | 14.6 | 934 |
 | 64 | session + `compile=True` | 1.006 | 1.113 | 19.9 | **1272** |
 
-**8.2× at batch 1, 13.5× with `compile=True`.** Tail latency matters more than the mean for
+### Encoder and decoder separately
+
+The two halves are independently useful — a sensor encodes and ships 2400 bits/s/channel,
+something else decodes — so `step_encode()` and `step_decode()` drive them apart, each with
+its own captured graph and its own stream position:
+
+| batch | half | reference | session | session + compile | RTF (compile) |
+|---:|---|---:|---:|---:|---:|
+| 1 | encode | 3.505 | 0.437 | **0.265** | **75.6** |
+| 1 | decode | 2.999 | 0.362 | **0.242** | **82.6** |
+| 16 | encode | 3.958 | 0.591 | 0.399 | 50.1 |
+| 16 | decode | 3.382 | 0.545 | 0.367 | 54.4 |
+| 64 | encode | 3.838 | 0.713 | 0.510 | 39.2 |
+| 64 | decode | 3.373 | 0.648 | 0.484 | 41.3 |
+
+(ms per frame; **13.2× encode, 12.4× decode** at batch 1.) The halves are near-symmetric,
+which is what the parameter counts predict — 6.34 M each side. Their sum, 0.507 ms, is
+slightly above the fused `step()` at 0.470 ms: two graph launches instead of one. Splitting
+costs about 8%, so fuse when both halves run on the same device.
+
+**8.2× at batch 1 fused, 13.5× with `compile=True`.** Tail latency matters more than the mean for
 a streaming codec, and it improves by more: p99 falls from 10.4 ms to 0.48 ms, because the
 variance was host-side scheduling rather than GPU work.
 
@@ -179,6 +199,9 @@ it yourself:
 python tools/bench_streaming.py --config configs/pretrain_stage2.yaml \
   --ckpt streemg_step200000_model.pt --verify --val-root $EMG_SHARD_ROOT_VAL
 ```
+
+`--verify` covers the fused path, the un-captured path and the split entry points; all
+three come out bitwise identical. `--bench` and `--split` produce the two tables above.
 
 Two settings worth knowing:
 

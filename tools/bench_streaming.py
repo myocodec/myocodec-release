@@ -15,6 +15,11 @@ steady state, so any disagreement is a bug rather than a rounding difference.
 compute time -- for the reference path and for the session, at several batch sizes. Batch
 here is streams x channels: the codec is channel-independent, so a 16-channel array is a
 batch of 16.
+
+`--split` additionally times the encoder and decoder halves apart, which is what you want
+when the two run on different machines: the sensor encodes and ships 2400 bits/s/channel,
+something else decodes. Each half is its own captured graph, so the two timings do not
+share launch overhead and their sum is slightly above the fused `step()`.
 """
 import argparse, glob, statistics, time
 
@@ -82,6 +87,24 @@ def verify(cfg, model, args, dev):
             print(f"  batch={batch:<3} {label:<5} tokens_all={match_all:.6f} "
                   f"tokens_steady={match_steady:.6f} recon_rel_l2={rel:.2e}  [{status}]")
 
+        # the split entry points must agree with the fused one
+        sess = StreamingSession(model, batch_size=batch, device=dev,
+                                exact_mask=not args.fast_mask)
+        tok, rec = [], []
+        for t in range(args.frames):
+            if sess.warmup_frames > t:
+                r, i = sess.step(frames[t])
+            else:
+                i = sess.step_encode(frames[t])
+                r = sess.step_decode(i)
+            tok.append(i.clone()); rec.append(r.clone())
+        tok = torch.cat(tok, dim=2); rec = torch.cat(rec, dim=-1)
+        steady = slice(sess.warmup_frames, args.frames)
+        m = (tok[:, :, steady] == ref_tok[:, :, steady]).float().mean().item()
+        rel = ((rec - ref_rec).norm() / ref_rec.norm()).item()
+        print(f"  batch={batch:<3} split tokens_steady={m:.6f} recon_rel_l2={rel:.2e}  "
+              f"[{'EXACT' if m == 1.0 else 'MISMATCH'}]")
+
 
 def timed(fn, n, warm, dev):
     for _ in range(warm):
@@ -96,6 +119,52 @@ def timed(fn, n, warm, dev):
         ts.append((time.perf_counter() - t0) * 1000.0)
     ts.sort()
     return statistics.mean(ts), ts[len(ts) // 2], ts[int(len(ts) * 0.99)]
+
+
+@torch.no_grad()
+def bench_split(cfg, model, args, dev):
+    """Encoder and decoder latency, measured apart."""
+    frame = cfg.model.frame_size
+    frame_ms = 1000.0 * frame / cfg.model.sample_rate
+    print(f"{'batch':>5} {'half':>8} {'path':>18} {'ms/frame':>9} {'p50':>8} {'p99':>8} {'RTF':>9}")
+    print("-" * 74)
+    for batch in args.batches:
+        x = torch.randn(batch, 1, frame, device=dev)
+        # reference halves, each with its own cache
+        ec = model.encoder.allocate_inference_cache(batch, dev)
+        dc = model.decoder.allocate_inference_cache(batch, dev)
+        idx = None
+        for _ in range(64):
+            idx, ec = model.encode(x, None, ec)
+            _, dc = model.decode(idx, None, dc)
+        rows = []
+        def ref_enc():
+            nonlocal ec
+            _, ec = model.encode(x, None, ec)
+        def ref_dec():
+            nonlocal dc
+            _, dc = model.decode(idx, None, dc)
+        rows.append(("encode", "reference", timed(ref_enc, args.iters, args.warmup, dev)))
+        rows.append(("decode", "reference", timed(ref_dec, args.iters, args.warmup, dev)))
+
+        for tag, compiled in (("session", False), ("session+compile", True)):
+            if compiled and not args.compile:
+                continue
+            sess = StreamingSession(model, batch_size=batch, device=dev, backend=args.backend,
+                                    compile=compiled, exact_mask=not args.fast_mask)
+            for _ in range(sess.warmup_frames):
+                sess.step(x)
+            codes = sess.step_encode(x)
+            for _ in range(8):
+                codes = sess.step_encode(x)
+                sess.step_decode(codes)
+            rows.append(("encode", tag, timed(lambda: sess.step_encode(x), args.iters, args.warmup, dev)))
+            rows.append(("decode", tag, timed(lambda: sess.step_decode(codes), args.iters, args.warmup, dev)))
+
+        for half, tag, (mean, p50, p99) in rows:
+            print(f"{batch:>5} {half:>8} {tag:>18} {mean:>9.3f} {p50:>8.3f} {p99:>8.3f} "
+                  f"{frame_ms / mean:>9.1f}")
+        print()
 
 
 @torch.no_grad()
@@ -153,8 +222,9 @@ def main():
     ap.add_argument("--backend", default="auto", choices=["auto", "flash", "sdpa"])
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--bench", action="store_true")
+    ap.add_argument("--split", action="store_true", help="time the encoder and decoder halves apart")
     a = ap.parse_args()
-    if not (a.verify or a.bench):
+    if not (a.verify or a.bench or a.split):
         a.verify = a.bench = True
 
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -166,6 +236,10 @@ def main():
     if a.bench:
         print("=== cost per frame ===")
         bench(cfg, model, a, dev)
+        print()
+    if a.split:
+        print("=== cost per frame, halves measured separately ===")
+        bench_split(cfg, model, a, dev)
 
 
 if __name__ == "__main__":
