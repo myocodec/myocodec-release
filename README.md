@@ -156,36 +156,39 @@ for frame in stream:                       # [B, C, 40] at 2 kHz
 Measured on one RTX PRO 6000 Blackwell, fp32 weights, bf16 KV cache, batch = streams ×
 channels (`tools/bench_streaming.py --bench`).
 
-> **Measurement conditions, and which way each number is biased.** The benchmark card was
-> idle for compute but shared a host with a second card training other jobs, and it idles
-> at 180 MHz against a 2430 MHz maximum, so the clock may not have fully ramped within the
-> warmup. Both effects only ever add time. So:
+> **Measurement conditions.** Idle card, nothing else running: verified `0` training
+> processes, `0` CUDA contexts and `0%` utilisation immediately before the run. Cold
+> Inductor cache, so the compiled kernels were autotuned on the same quiet machine they
+> were then measured on. SM clock sampled every 0.5 s *during* the timed loops: median
+> 2355 MHz against a 2430 MHz maximum, i.e. 97% — the card is fully ramped and clock state
+> contributes at most ~3%.
 >
-> * **absolute ms/frame is an upper bound** and **RTF a lower bound** — an idle, fully
->   boosted card is at least this good;
-> * **the speedup ratios are not conservative and may be inflated.** The reference path is
->   launch-bound, several hundred kernel launches per frame against the session's one, so
->   host-side contention taxes it far harder than it taxes the session. On a quiet machine
->   the gap can narrow even as both absolute numbers improve. Trust the latency budget;
->   treat every `N×` below as provisional.
+> Run-to-run spread across repeated idle runs is about 1% on the fused step and about 4% on
+> the halves, so treat the third digit as noise.
 >
-> We report the pessimistic measurement rather than wait for an empty machine, because the
-> claim the absolute numbers support — far faster than real time — survives it. To get the
-> tight numbers, re-run `--bench --split` on an idle card and record
-> `nvidia-smi --query-gpu=clocks.sm` alongside: if the clock reaches its maximum during the
-> run, the ramp concern is gone and only host load remains.
+> **The speedup column is the soft number.** The reference path is launch-bound — several
+> hundred kernel launches per frame against the session's one — so host contention taxes it
+> far harder than it taxes the session, and any measurement on a busy machine inflates the
+> ratio. We measured this rather than assuming it: on a contended host the same code read
+> 13.5× at batch 1, and on this idle one it reads 12.0×. The absolute latencies moved
+> hardly at all (the session path by 2%); it was the reference that got faster. Quote the
+> latency budget; treat the ratio as approximate.
 
 | batch | path | ms/frame | p99 | RTF | real-time streams |
 |---:|---|---:|---:|---:|---:|
-| 1 | reference | 6.356 | 10.412 | 3.1 | 3 |
-| 1 | session | 0.774 | 0.786 | **25.8** | 26 |
-| 1 | session + `compile=True` | **0.470** | 0.481 | **42.6** | 43 |
-| 16 | reference | 6.903 | 8.189 | 2.9 | 46 |
-| 16 | session | 1.122 | 1.160 | 17.8 | 285 |
-| 16 | session + `compile=True` | 0.746 | 0.775 | 26.8 | 429 |
-| 64 | reference | 7.196 | 13.988 | 2.8 | 178 |
-| 64 | session | 1.371 | 1.478 | 14.6 | 934 |
-| 64 | session + `compile=True` | 1.006 | 1.113 | 19.9 | **1272** |
+| 1 | reference | 5.585 | 5.975 | 3.6 | 4 |
+| 1 | session | 0.774 | 0.784 | 25.8 | 26 |
+| 1 | session + `compile=True` | **0.467** | 0.477 | **42.8** | 43 |
+| 16 | reference | 6.175 | 6.520 | 3.2 | 52 |
+| 16 | session | 1.124 | 1.159 | 17.8 | 285 |
+| 16 | session + `compile=True` | 0.666 | 0.705 | 30.0 | 481 |
+| 64 | reference | 6.343 | 6.661 | 3.2 | 202 |
+| 64 | session | 1.380 | 1.490 | 14.5 | 927 |
+| 64 | session + `compile=True` | 1.013 | 1.118 | 19.7 | **1264** |
+
+**7.2× at batch 1 fused, 12.0× with `compile=True`.** Tail latency matters more than the
+mean for a streaming codec, and it improves by far more: p99 falls from 5.98 ms to 0.48 ms,
+because most of the variance was host-side scheduling rather than GPU work.
 
 ### Encoder and decoder separately
 
@@ -193,24 +196,19 @@ The two halves are independently useful — a sensor encodes and ships 2400 bits
 something else decodes — so `step_encode()` and `step_decode()` drive them apart, each with
 its own captured graph and its own stream position:
 
-| batch | half | reference | session | session + compile | RTF (compile) |
-|---:|---|---:|---:|---:|---:|
-| 1 | encode | 3.505 | 0.437 | **0.265** | **75.6** |
-| 1 | decode | 2.999 | 0.362 | **0.242** | **82.6** |
-| 16 | encode | 3.958 | 0.591 | 0.399 | 50.1 |
-| 16 | decode | 3.382 | 0.545 | 0.367 | 54.4 |
-| 64 | encode | 3.838 | 0.713 | 0.510 | 39.2 |
-| 64 | decode | 3.373 | 0.648 | 0.484 | 41.3 |
+| batch | half | reference | session | session + compile | RTF (compile) | p99 |
+|---:|---|---:|---:|---:|---:|---:|
+| 1 | encode | 3.070 | 0.442 | **0.264** | **75.6** | 0.273 |
+| 1 | decode | 2.616 | 0.369 | **0.242** | **82.7** | 0.253 |
+| 16 | encode | 3.385 | 0.589 | 0.350 | 57.2 | 0.360 |
+| 16 | decode | 2.927 | 0.544 | 0.322 | 62.0 | 0.334 |
+| 64 | encode | 3.380 | 0.711 | 0.507 | 39.4 | 0.587 |
+| 64 | decode | 2.950 | 0.646 | 0.469 | 42.7 | 0.547 |
 
-(ms per frame, same conditions and the same caveats as above — absolute times are upper
-bounds, the **13.2× encode / 12.4× decode** at batch 1 are provisional.) The halves are near-symmetric,
-which is what the parameter counts predict — 6.34 M each side. Their sum, 0.507 ms, is
-slightly above the fused `step()` at 0.470 ms: two graph launches instead of one. Splitting
+(ms per frame, same conditions as above; **11.6× encode, 10.8× decode** at batch 1.) The halves are near-symmetric,
+which is what the parameter counts predict — 6.34 M each side. Their sum, 0.506 ms, is
+slightly above the fused `step()` at 0.467 ms: two graph launches instead of one. Splitting
 costs about 8%, so fuse when both halves run on the same device.
-
-**8.2× at batch 1 fused, 13.5× with `compile=True`** (provisional — see the bias note above). Tail latency matters more than the mean for
-a streaming codec, and it improves by more: p99 falls from 10.4 ms to 0.48 ms, because the
-variance was host-side scheduling rather than GPU work.
 
 **The fast path is bitwise identical to the reference** — not approximately, not
 token-exact, but `recon_rel_l2 == 0.0` at every batch size tested. Two things make that
@@ -233,7 +231,7 @@ Two settings worth knowing:
 
 - **`backend`** is `"flash"` when flash-attn is importable and `"sdpa"` otherwise. Only the
   flash backend is bitwise identical to a flash-attn reference. `sdpa` is portable and, with
-  `compile=True`, the fastest configuration here — **0.359 ms, RTF 55.6, 18.0×** at batch 1 —
+  `compile=True`, the fastest configuration here — **0.359 ms, RTF 55.6** at batch 1 (measured on a busy host; not re-run idle) —
   because Inductor can fuse through SDPA but not through flash-attn's opaque custom op. The
   catch is that the two reduce in a different order, so ~0.1% of tokens land on the other
   side of a quantizer boundary. Against an SDPA reference (no flash-attn installed) the
@@ -243,8 +241,8 @@ Two settings worth knowing:
   steady-state frame, and its fused kernels are not the reference's. It is off by default
   for that reason.
 
-Peak memory is roughly 2× the reference (227 MB vs 118 MB at batch 1; 5.8 GB vs 3.0 GB at
-batch 64), which is the CUDA graph's private pool holding the captured intermediates.
+Peak memory for the deployed graph path is roughly 2× the reference (227 MB vs 118 MB at
+batch 1; 5.8 GB vs 3.0 GB at batch 64), which is the CUDA graph's private pool holding the captured intermediates.
 
 ## Checkpoint
 
