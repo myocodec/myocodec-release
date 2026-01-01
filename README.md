@@ -206,9 +206,13 @@ its own captured graph and its own stream position:
 | 64 | decode | 2.950 | 0.646 | 0.469 | 42.7 | 0.547 |
 
 (ms per frame, same conditions as above; **11.6× encode, 10.8× decode** at batch 1.) The halves are near-symmetric,
-which is what the parameter counts predict — 6.34 M each side. Their sum, 0.506 ms, is
-slightly above the fused `step()` at 0.467 ms: two graph launches instead of one. Splitting
-costs about 8%, so fuse when both halves run on the same device.
+which is what the parameter counts predict — 6.34 M each side. Splitting is close to free: an
+alternating encode-then-decode pair measures **0.467 ms against 0.464 ms fused, about 1%**.
+
+Do not estimate that cost by adding the two half-timings above — they are measured in
+isolation, each in its own tight loop, so the sum double-counts per-call overhead that the
+alternating pattern amortises. The sum says 0.481 ms and would have you believe splitting
+costs 4%; measured back to back it costs 1%.
 
 **The fast path is bitwise identical to the reference** — not approximately, not
 token-exact, but `recon_rel_l2 == 0.0` at every batch size tested. Two things make that
