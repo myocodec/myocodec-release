@@ -2,10 +2,15 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
-checkpoints/
-data/
-logs/
-wandb/
+
+# Output directories, at the repo root ONLY. Unanchored ("data/") would also match
+# streaming_emg_codec/data/ and silently drop the corpus-preparation package from the
+# repo -- which is exactly what happened before this was anchored.
+/data/
+/checkpoints/
+/logs/
+/wandb/
+
 *.pt
 *.h5
 *.log
