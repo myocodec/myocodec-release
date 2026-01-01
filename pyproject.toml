@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "streaming-emg-codec"
+version = "1.0.0"
+description = "StreEMG: a streaming neural codec for surface EMG"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {file = "LICENSE"}
+dependencies = [
+    "torch>=2.4",
+    "numpy>=1.24",
+    "scipy>=1.11",
+    "h5py>=3.9",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# Muon is only needed for train.optimizer: muon, which is what the released run used.
+train = ["muon-optimizer>=0.1", "wandb>=0.16"]
+# Corpus preparation only (streaming_emg_codec/data/build_corpus.py and its readers).
+data = ["wfdb>=4.1", "pandas>=2.0", "tables>=3.9"]
+
+[tool.setuptools.packages.find]
+include = ["streaming_emg_codec*"]

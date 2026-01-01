@@ -24,6 +24,12 @@ import h5py, numpy as np, torch
 from scipy.signal import resample_poly
 
 
+# Run directly (`python tools/x.py`) and Python puts this file's own directory on
+# sys.path, not the repo root, so the package would not import. Bootstrap it.
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 def si_sdr(est, ref, eps=1e-8):
     ref = ref - ref.mean(-1, keepdim=True); est = est - est.mean(-1, keepdim=True)
     a = (est * ref).sum(-1, keepdim=True) / (ref.pow(2).sum(-1, keepdim=True) + eps)

@@ -1,5 +1,11 @@
 """Verify the bounded cache: identical outputs, bounded memory, still no lookahead."""
 import sys, torch
+# Run directly (`python tools/x.py`) and Python puts this file's own directory on
+# sys.path, not the repo root, so the package would not import. Bootstrap it.
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from streaming_emg_codec.model.attention import CausalSelfAttention, InferenceCache
 
 # Runs on GPU when available and on CPU otherwise; CPU has no bfloat16 SDPA kernel worth

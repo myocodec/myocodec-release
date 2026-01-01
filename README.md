@@ -16,6 +16,7 @@ paper are separate codebases and are not included here.
 
 ```
 configs/          pretrain_stage1.yaml, pretrain_stage2.yaml   the released run, exactly
+pyproject.toml    optional: pip install -e .
 streaming_emg_codec/
   config.py       typed config; unknown YAML keys are an error, not a silent default
   train.py        two-stage trainer (Muon/AdamW split, AMP, disc ramp, resume)
@@ -47,6 +48,11 @@ docs/DATA.md        corpus composition, splits, and per-corpus preprocessing
 ```bash
 pip install -r requirements.txt
 ```
+
+Every command below runs from the repo root with no further setup — the tools and tests
+bootstrap the package onto `sys.path` themselves, so `PYTHONPATH` is not needed. To install
+it into an environment instead, `pip install -e .` (extras: `.[train]` pulls Muon and
+wandb, `.[data]` the corpus readers).
 
 `flash-attn` is optional for training and evaluation: without it the attention layer falls
 back to `torch` SDPA, which applies the same `window_size=(W, 0)` sliding-window causal
