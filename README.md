@@ -218,18 +218,20 @@ its own captured graph and its own stream position:
 
 (ms per frame, same conditions as above; **12.1× encode, 11.6× decode** at batch 1.) The halves are near-symmetric,
 which is what the parameter counts predict — 6.34 M each side. Splitting is close to free: an
-alternating encode-then-decode pair measures **0.467 ms against 0.464 ms fused, about 1%**.
+alternating encode-then-decode pair measures **0.4694 ms against 0.4669 ms fused, 0.55%**.
 
 Do not estimate that cost by adding the two half-timings above — they are measured in
 isolation, each in its own tight loop, so the sum double-counts per-call overhead that the
 alternating pattern amortises. The sum says 0.482 ms and would have you believe splitting
-costs 4%; measured back to back it costs 1%.
+costs 4%; measured back to back it costs 0.55%.
 
-Read the 1% as an **upper bound**. Both sides of it were timed in processes holding three
-captured graphs, identically, so the comparison is sound — but a per-replay overhead does
-not cancel in a ratio when one side replays once and the other twice, which biases it
-upward. The true figure is at or below 1%; a minimal-residency measurement, one graph per
-process, is pending.
+That 0.55% is the minimal-residency measurement: exactly **one captured graph in the fused
+process and two in the pair process**, asserted at run time, with warmup kept on the
+reference path so it captures nothing. An earlier figure of 1% came from processes holding
+three graphs each and was an upper bound, as expected — residency biases the ratio upward,
+because a per-replay overhead does not cancel when one side replays once and the other
+twice. Three independent runs of each: fused 0.4669/0.4669/0.4668, pair
+0.4698/0.4697/0.4688.
 
 And note what the 1% is a cost *of*: two captured graphs against one, on one card in one
 process. It prices the extra graph launch and nothing else. Splitting the **model** is
