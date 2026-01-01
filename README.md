@@ -200,21 +200,20 @@ its own captured graph and its own stream position:
 
 | batch | half | reference | session | session + compile | RTF (compile) | p99 |
 |---:|---|---:|---:|---:|---:|---:|
-| 1 | encode | 3.060 | 0.433 | **0.253** | **79.1** | 0.265 |
-| 1 | decode | 2.650 | 0.359 | **0.229** | **87.3** | 0.243 |
-| 16 | encode | 3.385 | 0.589 | 0.350 | 57.1 | 0.360 |
-| 16 | decode | 2.927 | 0.544 | 0.322 | 62.1 | 0.334 |
-| 64 | encode | 3.380 | 0.711 | 0.507 | 39.4 | 0.587 |
-| 64 | decode | 2.950 | 0.646 | 0.469 | 42.6 | 0.547 |
+| 1 | encode | 2.876 | 0.430 | **0.253** | **79.1** | 0.262 |
+| 1 | decode | 2.462 | 0.356 | **0.229** | **87.3** | 0.240 |
+| 16 | encode | 3.100 | 0.592 | 0.357–0.398 | 50.3–56.0 | 0.407 |
+| 16 | decode | 2.698 | 0.546 | 0.326–0.368 | 54.3–61.3 | 0.378 |
+| 64 | encode | 3.195 | 0.716 | 0.513 | 39.0 | 0.590 |
+| 64 | decode | 2.778 | 0.650 | 0.478 | 41.8 | 0.553 |
 
-> The batch-16 and batch-64 rows were taken before a defect in the benchmark harness was
-> found and are biased **upward by a few percent**; they are being re-measured. A
-> `StreamingSession` holds a private CUDA graph memory pool for its lifetime, and the
-> harness used to time several configurations in one process without releasing them, so
-> whichever measurement ran last was inflated — 4.5% at batch 1, and 13% in a case holding
-> more sessions. The batch-1 row above is clean: it comes from single-session-per-process
-> runs, reproduced to three digits by two independent protocols. `tools/bench_streaming.py`
-> now frees each session between configurations; see `_release` there.
+> **Why batch 16 is a range.** With `compile=True` at that shape, Inductor's autotuning
+> settles on one of two kernel sets that differ by about 14% in sustained use, and which one
+> it picks varies between otherwise identical runs. Five measurements gave encode
+> 0.350, 0.357, 0.389, 0.397, 0.398 — two clusters, not a continuum. Batch 1 and batch 64
+> are stable to about 1%, and the uncompiled `session` column is stable at every batch, so
+> this is autotune selection rather than measurement noise. A point estimate here would be
+> a coin flip presented as a number.
 
 (ms per frame, same conditions as above; **12.1× encode, 11.6× decode** at batch 1.) The halves are near-symmetric,
 which is what the parameter counts predict — 6.34 M each side. Splitting is close to free: an
