@@ -25,6 +25,7 @@ streaming_emg_codec/
     attention.py  sliding-window causal attention with a bounded KV cache
     rvq.py        residual VQ with dead-entry restart
     discriminator.py   multi-period + multi-scale-STFT discriminator
+    fast_stream.py  low-latency inference: static KV buffers + one CUDA graph
   data/
     readers.py       per-format readers, one per source corpus
     build_corpus.py  raw corpora -> unified 2 kHz HDF5 + manifest, with splits
@@ -34,6 +35,7 @@ streaming_emg_codec/
 tools/
   eval_recon.py       reconstruction metrics; the script behind every number in Table 5
   verify_streaming.py streamed vs offline equivalence on a trained checkpoint
+  bench_streaming.py  fast-path correctness (--verify) and per-frame cost (--bench)
 tests/
   test_smoke.py           end-to-end, no data and no GPU needed
   test_streaming_cache.py attention cache: equivalence, bounded memory, no lookahead
@@ -46,11 +48,13 @@ docs/DATA.md        corpus composition, splits, and per-corpus preprocessing
 pip install -r requirements.txt
 ```
 
-`flash-attn` is optional. Without it the attention layer falls back to `torch` SDPA, which
-reproduces the same `window_size=(W, 0)` sliding-window causal mask — verified to
-**1.8e-07 max absolute difference in fp32** against the reference implementation. Attention
-runs over frames (100–250 tokens for a 5 s window), not raw samples, so the fallback costs
-essentially nothing.
+`flash-attn` is optional for training and evaluation: without it the attention layer falls
+back to `torch` SDPA, which applies the same `window_size=(W, 0)` sliding-window causal
+mask. Attention runs over frames (100–250 tokens for a 5 s window), not raw samples, so the
+fallback costs little. The two are not bit-identical — they reduce in a different order, so
+~0.1% of tokens can land on the other side of a quantizer boundary — which matters only if
+you are comparing token streams across machines. Install it if you can, and see
+[Streaming inference](#streaming-inference) for where it also buys exactness.
 
 ## Quick check
 
@@ -122,6 +126,77 @@ python tools/verify_streaming.py \
 table come from identical metric code. That backend needs the baseline's own released
 repository and checkpoint, which are not redistributed here; pass `--biocodec-repo`.
 
+## Streaming inference
+
+`model.streaming_step()` is the reference implementation and is what the tests check
+against, but it is not how you would deploy this. At one frame per step the codec is
+**launch-bound, not compute-bound**: a frame costs ~6.4 ms on an RTX PRO 6000, and 64
+channels batched together cost 7.2 ms — 64× the arithmetic for 13% more time. The 6.4 ms
+is several hundred tiny CUDA kernels plus three `.item()` calls per frame in the
+quantizer's variable-bitrate bookkeeping.
+
+`StreamingSession` keeps the model and its weights exactly as they are and removes that
+overhead — no host synchronisation, static KV buffers, and the whole encode+decode step
+captured into one CUDA graph:
+
+```python
+from streaming_emg_codec.model.fast_stream import StreamingSession
+
+session = StreamingSession(model, batch_size=1, device="cuda")
+for frame in stream:                       # [B, C, 40] at 2 kHz
+    recon, codes = session.step(frame)
+```
+
+Measured on one RTX PRO 6000 Blackwell, fp32 weights, bf16 KV cache, batch = streams ×
+channels (`tools/bench_streaming.py --bench`):
+
+| batch | path | ms/frame | p99 | RTF | real-time streams |
+|---:|---|---:|---:|---:|---:|
+| 1 | reference | 6.356 | 10.412 | 3.1 | 3 |
+| 1 | session | 0.774 | 0.786 | **25.8** | 26 |
+| 1 | session + `compile=True` | **0.470** | 0.481 | **42.6** | 43 |
+| 16 | reference | 6.903 | 8.189 | 2.9 | 46 |
+| 16 | session | 1.122 | 1.160 | 17.8 | 285 |
+| 16 | session + `compile=True` | 0.746 | 0.775 | 26.8 | 429 |
+| 64 | reference | 7.196 | 13.988 | 2.8 | 178 |
+| 64 | session | 1.371 | 1.478 | 14.6 | 934 |
+| 64 | session + `compile=True` | 1.006 | 1.113 | 19.9 | **1272** |
+
+**8.2× at batch 1, 13.5× with `compile=True`.** Tail latency matters more than the mean for
+a streaming codec, and it improves by more: p99 falls from 10.4 ms to 0.48 ms, because the
+variance was host-side scheduling rather than GPU work.
+
+**The fast path is bitwise identical to the reference** — not approximately, not
+token-exact, but `recon_rel_l2 == 0.0` at every batch size tested. Two things make that
+true. The steady-state key set is exactly `W+1` keys, all of which pass both the causal and
+the sliding-window mask, so no mask is needed and the buffer can be a ring; and the session
+dispatches `flash_attn_with_kvcache`, the same kernel the reference uses, rather than a
+different attention implementation. The first `W+1 = 65` frames genuinely have a different
+key set, so they run on the reference path verbatim and the cache is seeded from it. Check
+it yourself:
+
+```bash
+python tools/bench_streaming.py --config configs/pretrain_stage2.yaml \
+  --ckpt streemg_step200000_model.pt --verify --val-root $EMG_SHARD_ROOT_VAL
+```
+
+Two settings worth knowing:
+
+- **`backend`** is `"flash"` when flash-attn is importable and `"sdpa"` otherwise. Only the
+  flash backend is bitwise identical to a flash-attn reference. `sdpa` is portable and, with
+  `compile=True`, the fastest configuration here — **0.359 ms, RTF 55.6, 18.0×** at batch 1 —
+  because Inductor can fuse through SDPA but not through flash-attn's opaque custom op. The
+  catch is that the two reduce in a different order, so ~0.1% of tokens land on the other
+  side of a quantizer boundary. Against an SDPA reference (no flash-attn installed) the
+  `sdpa` backend is token-exact at batch 1. Pick `flash` for reproducible token streams and
+  `sdpa` + `compile` for throughput.
+- **`compile=True`** adds a one-off Inductor compile pause of a minute or two on the first
+  steady-state frame, and its fused kernels are not the reference's. It is off by default
+  for that reason.
+
+Peak memory is roughly 2× the reference (227 MB vs 118 MB at batch 1; 5.8 GB vs 3.0 GB at
+batch 64), which is the CUDA graph's private pool holding the captured intermediates.
+
 ## Checkpoint
 
 `step_200000.pt` is the checkpoint every StreEMG number in the paper uses.
@@ -169,4 +244,6 @@ over 8000 frames, and that perturbing frame *t* leaves every earlier output unto
   flip down the codebooks (per-codebook agreement falls monotonically from 1.000 to 0.926).
   Reconstruction is barely affected — the flipped frames are near-equidistant between
   entries — but if you need a frame-for-frame reproducible token stream, encode in fp32.
-  `tools/verify_streaming.py --amp` reports both.
+  `tools/verify_streaming.py --amp` reports both. This is a property of the *offline vs
+  streaming* comparison; the fast inference path of `StreamingSession` is bitwise identical
+  to the reference streaming path, so it inherits this and adds nothing to it.

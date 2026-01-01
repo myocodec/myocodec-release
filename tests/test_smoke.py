@@ -39,7 +39,7 @@ def main():
     # shrink to something that runs on a laptop; architecture is otherwise the paper's
     cfg.data.kind = "synthetic"
     cfg.data.channels = 2
-    cfg.data.window_seconds = 1.0
+    cfg.data.window_seconds = 2.0
     cfg.train.device = "cpu"
     cfg.train.use_amp = False
 
@@ -126,6 +126,40 @@ def main():
                 / offline["reconstruction"].norm().clamp_min(1e-8))
     check("tokens identical streamed vs offline", tok_match == 1.0, f"match={tok_match:.6f}")
     check("reconstruction identical streamed vs offline", rel < 1e-5, f"rel_l2={rel:.2e}")
+
+    print("\n7. fast streaming session reproduces the reference path")
+    if torch.cuda.is_available():
+        from streaming_emg_codec.model.fast_stream import StreamingSession
+        gmodel = StreamingEMGCodec(cfg.model).cuda().eval()
+        gmodel.load_state_dict(model.state_dict())
+        gbatch = batch.cuda()
+        n_steps = 0
+        with torch.no_grad():
+            state = StreamingState()
+            ref = []
+            for s in range(0, gbatch.shape[-1], frame):
+                _, tok, state = gmodel.streaming_step(gbatch[..., s:s + frame], state=state,
+                                                      n_codebooks=None)
+                ref.append(tok)
+                n_steps += 1
+            ref = torch.cat(ref, dim=2)
+            sess = StreamingSession(gmodel, batch_size=gbatch.shape[0] * gbatch.shape[1],
+                                    device="cuda")
+            got = []
+            for s in range(0, gbatch.shape[-1], frame):
+                _, tok = sess.step(gbatch[..., s:s + frame])
+                got.append(tok.clone())
+            got = torch.cat(got, dim=2)
+        if n_steps <= sess.warmup_frames:
+            check("session ran past warmup", False,
+                  f"only {n_steps} frames; needs > {sess.warmup_frames}")
+        else:
+            steady = slice(sess.warmup_frames, None)
+            m = (got[:, :, steady] == ref[:, :, steady]).float().mean().item()
+            check(f"tokens match the reference ({sess.backend} backend)", m == 1.0,
+                  f"match={m:.6f} over {n_steps - sess.warmup_frames} steady frames")
+    else:
+        print("  [SKIP] no CUDA device")
 
     print("\n" + ("ALL PASSED" if ok else "FAILURES PRESENT"))
     return 0 if ok else 1
