@@ -40,6 +40,8 @@ tools/
 tests/
   test_smoke.py           end-to-end, no data and no GPU needed
   test_streaming_cache.py attention cache: equivalence, bounded memory, no lookahead
+  test_verify_catches_divergence.py  negative control: break the fast path, require the
+                          equivalence check to notice (CUDA; correctness only)
 docs/DATA.md        corpus composition, splits, and per-corpus preprocessing
 ```
 
@@ -238,7 +240,12 @@ python tools/bench_streaming.py --config configs/pretrain_stage2.yaml \
 ```
 
 `--verify` covers the fused path, the un-captured path and the split entry points; all
-three come out bitwise identical. `--bench` and `--split` produce the two tables above.
+three come out bitwise identical. And because a check that has only ever passed is not by
+itself evidence, `tests/test_verify_catches_divergence.py` is its negative control: it
+breaks the fast path four ways — stream position off by one, KV length off by one, a wiped
+layer-0 cache, a perturbed encoder weight — and requires the comparison to fail on every
+one. It also confirms the comparison set is non-empty and the two outputs are distinct
+tensors, which is how such a check usually fails silently. `--bench` and `--split` produce the two tables above.
 
 Two settings worth knowing:
 
