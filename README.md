@@ -198,12 +198,12 @@ its own captured graph and its own stream position:
 
 | batch | half | reference | session | session + compile | RTF (compile) | p99 |
 |---:|---|---:|---:|---:|---:|---:|
-| 1 | encode | 3.070 | 0.442 | **0.264** | **75.6** | 0.273 |
-| 1 | decode | 2.616 | 0.369 | **0.242** | **82.7** | 0.253 |
-| 16 | encode | 3.385 | 0.589 | 0.350 | 57.2 | 0.360 |
-| 16 | decode | 2.927 | 0.544 | 0.322 | 62.0 | 0.334 |
+| 1 | encode | 3.070 | 0.442 | **0.264** | **75.8** | 0.273 |
+| 1 | decode | 2.616 | 0.369 | **0.242** | **82.6** | 0.253 |
+| 16 | encode | 3.385 | 0.589 | 0.350 | 57.1 | 0.360 |
+| 16 | decode | 2.927 | 0.544 | 0.322 | 62.1 | 0.334 |
 | 64 | encode | 3.380 | 0.711 | 0.507 | 39.4 | 0.587 |
-| 64 | decode | 2.950 | 0.646 | 0.469 | 42.7 | 0.547 |
+| 64 | decode | 2.950 | 0.646 | 0.469 | 42.6 | 0.547 |
 
 (ms per frame, same conditions as above; **11.6× encode, 10.8× decode** at batch 1.) The halves are near-symmetric,
 which is what the parameter counts predict — 6.34 M each side. Splitting is close to free: an
