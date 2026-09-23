@@ -303,6 +303,10 @@ session needs about 5.8 GB against the reference's 3.0 GB.
 | `myocodec_step200000_model.pt` | generator weights only (12.72 M params) | no |
 | `myocodec_step200000_full.pt` | generator + discriminator + both optimizer states | yes |
 
+The weights are distributed with the submission's supplementary material rather than
+committed to this repository. Place both files at the repository root, or pass absolute
+paths, for the commands in this section to work as written.
+
 Load the model-only file with:
 
 ```python
