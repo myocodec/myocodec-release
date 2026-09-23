@@ -8,13 +8,13 @@ Metrics:
   EnvR                         -- Pearson of 20 ms non-overlapping RMS envelopes, per-window then averaged
   cb_util, cb_perp             -- mean over codebooks of (fraction of entries used) and exp(entropy)
 
-Backends: `streemg` (this codec, native 2 kHz) and `biocodec` (the baseline; 2k->1k
+Backends: `myocodec` (this codec, native 2 kHz) and `biocodec` (the baseline; 2k->1k
 resample, per-window z-norm, clamp +-10, scored against the 1 kHz signal it reconstructs).
 The envelope frame length is derived from each model's own rate, so "20 ms" means 20 ms in
 both cases rather than a fixed number of samples.
 
 The `biocodec` backend needs that baseline's own released code and checkpoint, which are
-not redistributed here; point --biocodec-repo at a clone of it. The `streemg` backend is
+not redistributed here; point --biocodec-repo at a clone of it. The `myocodec` backend is
 self-contained.
 
 Held-out shards are produced by `extract_shards.py --split val`.
@@ -103,7 +103,7 @@ def codebook_stats(counts, L, K):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", choices=["streemg", "biocodec"], required=True)
+    ap.add_argument("--model", choices=["myocodec", "biocodec"], required=True)
     ap.add_argument("--config"); ap.add_argument("--ckpt", required=True)
     ap.add_argument("--val-root", default="data/shards_val")
     ap.add_argument("--batch-size", type=int, default=256)
@@ -114,7 +114,7 @@ def main():
     a = ap.parse_args()
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    if a.model == "streemg":
+    if a.model == "myocodec":
         from streaming_emg_codec.config import load_config
         from streaming_emg_codec.model import StreamingEMGCodec
         cfg = load_config(a.config)
@@ -161,7 +161,7 @@ def main():
                     if a.max_windows and acc.n >= a.max_windows:
                         break
                     x = np.asarray(W[b0:b0 + a.batch_size], dtype=np.float32)[:, None, :]
-                    if a.model == "streemg":
+                    if a.model == "myocodec":
                         emg = torch.from_numpy(np.ascontiguousarray(x)).to(dev)
                         with torch.autocast(dev.type, dtype=torch.bfloat16,
                                             enabled=use_amp and dev.type == "cuda"):

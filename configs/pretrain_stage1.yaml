@@ -1,4 +1,4 @@
-# StreEMG pretraining -- STAGE 1 of 2: generator only, no discriminator instantiated.
+# MyoCodec pretraining -- STAGE 1 of 2: generator only, no discriminator instantiated.
 #
 # Stage 1 and stage 2 differ ONLY in batch size and step budget. Architecture, losses,
 # optimizer and discriminator schedule are identical between the two files, so the
@@ -89,7 +89,7 @@ train:
   max_steps: 100000              # stage 1 ends exactly where the discriminator ramp begins
   log_every: 25
   save_every: 5000
-  output_dir: checkpoints/streemg
+  output_dir: checkpoints/myocodec
   grad_clip: 1.0
   use_amp: true
   max_gpu_memory_gb: 90.0        # hard cap; the trainer raises rather than letting the

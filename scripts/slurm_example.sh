@@ -4,7 +4,7 @@
 #SBATCH -c 8
 #SBATCH --mem=120G
 #SBATCH -t 2-00:00:00
-#SBATCH -J streemg
+#SBATCH -J myocodec
 #SBATCH --signal=B:USR1@180
 #
 # Example self-resubmitting SLURM chain. Full pretraining is far longer than any single
@@ -16,7 +16,7 @@
 # OOMs immediately. Reading the stage from the checkpoint's own step makes that
 # unrepresentable.
 REPO="${REPO:-$PWD}"
-CKDIR="${CKDIR:-$REPO/checkpoints/streemg}"
+CKDIR="${CKDIR:-$REPO/checkpoints/myocodec}"
 
 resub() { sbatch "$REPO/scripts/slurm_example.sh"; echo "resubmitted next chain job"; }
 trap resub USR1

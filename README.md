@@ -1,6 +1,6 @@
-# StreEMG — a streaming neural codec for surface EMG
+# MyoCodec — a streaming neural codec for surface EMG
 
-Reference implementation for *StreEMG: Streaming Neural EMG Codec*.
+Reference implementation for *MyoCodec: Streaming Neural EMG Codec*.
 
 A causal transformer encoder, residual vector quantizer, and causal transformer decoder
 that encode **each sEMG channel independently** at a **50 Hz frame rate** and
@@ -90,11 +90,11 @@ transition changes the objective and nothing else.
 ```bash
 # Stage 1 — generator only, batch 1024, to step 100k
 scripts/train.sh --config configs/pretrain_stage1.yaml --resume auto \
-  --override data.root=$EMG_SHARD_ROOT --override train.output_dir=checkpoints/streemg
+  --override data.root=$EMG_SHARD_ROOT --override train.output_dir=checkpoints/myocodec
 
 # Stage 2 — discriminator ramps in over 50k steps, batch 192
 scripts/train.sh --config configs/pretrain_stage2.yaml --resume auto \
-  --override data.root=$EMG_SHARD_ROOT --override train.output_dir=checkpoints/streemg
+  --override data.root=$EMG_SHARD_ROOT --override train.output_dir=checkpoints/myocodec
 ```
 
 `scripts/slurm_example.sh` is a self-resubmitting SLURM chain that picks the stage from the
@@ -120,14 +120,14 @@ checkpoint's own step. Four things are worth knowing before starting a long run:
 
 ```bash
 # reconstruction metrics on a held-out shard set
-python tools/eval_recon.py --model streemg \
-  --config configs/pretrain_stage2.yaml --ckpt checkpoints/streemg/step_200000.pt \
-  --val-root $EMG_SHARD_ROOT_VAL --tag streemg-200k
+python tools/eval_recon.py --model myocodec \
+  --config configs/pretrain_stage2.yaml --ckpt checkpoints/myocodec/step_200000.pt \
+  --val-root $EMG_SHARD_ROOT_VAL --tag myocodec-200k
 
 # streaming equivalence: chunk-by-chunk cached decode == full-sequence forward
 python tools/verify_streaming.py \
-  --config configs/pretrain_stage2.yaml --ckpt checkpoints/streemg/step_200000.pt \
-  --val-root $EMG_SHARD_ROOT_VAL --tag streemg-200k
+  --config configs/pretrain_stage2.yaml --ckpt checkpoints/myocodec/step_200000.pt \
+  --val-root $EMG_SHARD_ROOT_VAL --tag myocodec-200k
 ```
 
 `eval_recon.py` also has a `biocodec` backend so both rows of the paper's reconstruction
@@ -253,7 +253,7 @@ it yourself:
 
 ```bash
 python tools/bench_streaming.py --config configs/pretrain_stage2.yaml \
-  --ckpt streemg_step200000_model.pt --verify --val-root $EMG_SHARD_ROOT_VAL
+  --ckpt myocodec_step200000_model.pt --verify --val-root $EMG_SHARD_ROOT_VAL
 ```
 
 `--verify` covers the fused path, the un-captured path and the split entry points; all
@@ -296,12 +296,12 @@ session needs about 5.8 GB against the reference's 3.0 GB.
 
 ## Checkpoint
 
-`step_200000.pt` is the checkpoint every StreEMG number in the paper uses.
+`step_200000.pt` is the checkpoint every MyoCodec number in the paper uses.
 
 | file | contents | resumable |
 |---|---|---|
-| `streemg_step200000_model.pt` | generator weights only (12.72 M params) | no |
-| `streemg_step200000_full.pt` | generator + discriminator + both optimizer states | yes |
+| `myocodec_step200000_model.pt` | generator weights only (12.72 M params) | no |
+| `myocodec_step200000_full.pt` | generator + discriminator + both optimizer states | yes |
 
 Load the model-only file with:
 
@@ -312,7 +312,7 @@ from streaming_emg_codec.model import StreamingEMGCodec
 
 cfg = load_config("configs/pretrain_stage2.yaml")
 model = StreamingEMGCodec(cfg.model)
-model.load_state_dict(torch.load("streemg_step200000_model.pt", map_location="cpu")["model"])
+model.load_state_dict(torch.load("myocodec_step200000_model.pt", map_location="cpu")["model"])
 model.eval()
 
 # x: [batch, channels, samples] at 2 kHz, normalized per window across channels
