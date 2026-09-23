@@ -28,6 +28,24 @@ and trains on single-channel windows.
 > pretrained largely on two of the three domains it is then evaluated on, though never on
 > their evaluation recordings.
 
+**Ninapro is six sub-databases, not one**, spanning 10–16 channels. Worth stating because
+the name reads as a single corpus and the channel count is not constant across it:
+
+| sub-DB | subjects | nominal channels | train recordings | train channel-hours |
+|---|---:|---:|---:|---:|
+| DB1 | 27 | 10 | 11,548 | 5.8 |
+| DB2 | 40 | 12 | 13,885 | 129.1 |
+| DB4 | 10 | 12 | 6,101 | 49.6 |
+| DB5 | 10 | 16 | 4,635 | 52.2 |
+| DB6 | 10 | 14 | 13,747 | 115.1 |
+| DB7 | 22 | 12 | 9,385 | 64.5 |
+| **total** | **119** | | | **416.2** |
+
+DB3 and DB8 are not present. Records showing fewer than the nominal channel count have had
+dead channels dropped by `build_corpus.py`, which removes any channel with std < 1e-6. Note
+the citation range: DB1–DB3 are Atzori et al., but DB4/DB5 are Pizzolato et al., DB6 is
+Palermo et al. and DB7 is Krasoulis et al.
+
 **emg2speech (ALS) is not redistributed here.** Dropping it costs 1.2% of the corpus's
 channel-hours; the other eleven corpora are publicly downloadable, and the pipeline runs
 unchanged without it — omit it from the `build_corpus` loop below.
@@ -78,9 +96,13 @@ Two deliberate non-actions:
   so it holds nothing above 100 Hz, while emg2speech keeps 44–52% of its power in
   150–450 Hz. Low-passing everything to the common floor would destroy real signal from the
   high-rate corpora to match an artefact of the low-rate one.
-- **Ninapro DB1 is excluded.** Its Otto Bock 13E200 output is a rectified, smoothed RMS
-  envelope at 100 Hz, not a raw EMG waveform. The exclusion is enforced by the native-rate
-  gate (`MIN_NATIVE_FS`) in `readers.py`, so it catches any other low-rate source too.
+- **Ninapro DB1 is gated out of a rebuild, but is present in the released corpus.** Its
+  Otto Bock 13E200 output is a rectified, smoothed RMS envelope at 100 Hz, not a raw EMG
+  waveform, and `readers.py` now drops it on native rate (`MIN_NATIVE_FS`, which catches any
+  other low-rate source too). That gate was added *after* the released shards were
+  extracted, so the released checkpoint did train on DB1: **5.8 of Ninapro's 416.2 training
+  channel-hours, 1.4% of Ninapro and 0.02% of the corpus.** Rebuilding the corpus with the
+  current code excludes it; we report what the released model actually saw.
 
 All conditioning is **causal** (`sosfilt`, forward-only, initial conditions from the first
 sample). The authors' own implementations mostly use zero-phase `filtfilt`; a zero-phase

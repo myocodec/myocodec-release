@@ -99,8 +99,10 @@ PAPER_SPEC: dict[str, dict] = {
     # spectrum only where it detects a peak rather than notching unconditionally -- already
     # in the released data.
     # CAVEAT: DB1's Otto Bock output is a rectified, smoothed RMS ENVELOPE at 100 Hz, not
-    # raw EMG -- a different signal class. It is excluded from the corpus by the native-rate
-    # gate in readers.py (MIN_NATIVE_FS), so no DB1 window reaches the codec.
+    # raw EMG -- a different signal class. readers.py now gates it out on native rate
+    # (MIN_NATIVE_FS), but that gate was added AFTER the released corpus was built, so DB1
+    # IS present in the shards the released checkpoint trained on: 5.8 of 416.2 Ninapro
+    # channel-hours, 0.02% of the corpus. A rebuild excludes it; the released model saw it.
     'ninapro':    dict(hp=None, bp=None, notch=None, rate=2000, src='paper', act=False,
                        note='DB1 90-450 Hz envelope, DB2/3 20-450 Hz + 50 Hz Hampel, upstream'),
 
