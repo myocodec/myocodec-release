@@ -21,7 +21,7 @@ scripts/train.sh  launcher for the two training stages
 pyproject.toml    optional: pip install -e .
 streaming_emg_codec/
   config.py       typed config; unknown YAML keys are an error, not a silent default
-  train.py        two-stage trainer (Muon/AdamW split, AMP, disc ramp, resume)
+  train.py        two-stage trainer (Muon/aux-Adam split, AMP, disc ramp, resume)
   losses.py       Huber + multi-scale spectral + VQ + commitment
   model/
     codec.py          encoder / RVQ / decoder, framing, and the streaming interface
@@ -170,9 +170,17 @@ out = model(x)                      # out["reconstruction"], out["indices"]
   channels, which the codec is meant to preserve.
 - **Input rate is 2 kHz.** Resample anything else, anti-aliased, before encoding.
 - **Windows are 5.0 s** (10,000 samples at 2 kHz) throughout training and evaluation.
-- The optimizer is **Muon on 2-D hidden matrices, AdamW on everything else** — the RVQ
-  codebooks are lookup tables, not linear maps, and the input/output projections touch the
-  data boundary, so both stay on AdamW along with all 1-D parameters.
+- **The generator uses Muon on 2-D hidden matrices and Muon's own auxiliary Adam on
+  everything else**, via `SingleDeviceMuonWithAuxAdam`: 64 matrices at `muon_lr` 0.02 with
+  momentum 0.95, and 146 remaining tensors at `lr` 3e-4, betas (0.9, 0.95), eps 1e-10. Muon
+  only makes sense for weight matrices acting as linear maps, so the RVQ codebooks (lookup
+  tables), the input/output projections (data boundary) and every 1-D parameter go to the
+  auxiliary group. That group applies **decoupled** weight decay, so its update rule is
+  AdamW-style, but it is Muon's internal Adam and not `torch.optim.AdamW` — the eps alone
+  differs by two orders of magnitude from the torch default.
+- **`torch.optim.AdamW` trains the discriminator only**, at lr 1e-4, betas (0.8, 0.99),
+  weight decay 1e-4. It is a separate optimizer over a separate parameter set and never
+  touches the generator.
 - **Encode in fp32 if you need a reproducible token stream.** Streaming and offline encoding
   agree on 99.98% of frames in fp32, but only 95.7% under the bfloat16 autocast used for
   training: RVQ assigns each frame by nearest neighbour, so a ~1e-4 difference flips frames

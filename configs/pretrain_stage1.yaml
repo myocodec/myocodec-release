@@ -81,9 +81,10 @@ discriminator:
 train:
   device: cuda
   seed: 1337
-  optimizer: muon                # Muon on 2-D hidden matrices, AdamW on codebooks,
-                                 # input/output projections and all 1-D parameters
-  lr: 0.0003                     # AdamW group
+  optimizer: muon                # Muon on 2-D hidden matrices; Muon's own auxiliary Adam
+                                 # (NOT torch AdamW) on codebooks, input/output projections
+                                 # and all 1-D parameters
+  lr: 0.0003                     # auxiliary Adam group
   muon_lr: 0.02                  # Muon group
   weight_decay: 0.01
   max_steps: 100000              # stage 1 ends exactly where the discriminator ramp begins

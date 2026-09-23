@@ -25,11 +25,16 @@ from streaming_emg_codec.utils import ensure_dir, move_batch_to_device, set_seed
 
 
 def build_optimizer(model, config):
-    """AdamW by default; Muon for 2-D hidden matrices when config.train.optimizer == "muon".
+    """torch AdamW by default; Muon for 2-D hidden matrices when config.train.optimizer == "muon".
 
     Muon only makes sense for weight matrices that act as linear maps. The RVQ codebooks are
-    lookup tables and the input/output projections touch the data boundary, so both stay on
-    AdamW -- as do all 1-D params (biases, LayerNorm).
+    lookup tables and the input/output projections touch the data boundary, so both go to the
+    auxiliary group -- as do all 1-D params (biases, LayerNorm).
+
+    Note what the auxiliary group is: `SingleDeviceMuonWithAuxAdam` carries its OWN Adam for
+    use_muon=False params (decoupled weight decay, so AdamW-style, but eps 1e-10 rather than
+    torch's 1e-8). It is not torch.optim.AdamW. The released run used optimizer: muon, so the
+    generator never saw torch AdamW; only the discriminator does.
     """
     lr = config.train.lr
     wd = config.train.weight_decay
@@ -59,7 +64,7 @@ def build_optimizer(model, config):
     n_m = sum(q.numel() for q in muon_p) / 1e6
     n_a = sum(q.numel() for q in adam_p) / 1e6
     print(f"[optim] Muon on {len(muon_p)} matrices ({n_m:.2f} M params, lr {muon_lr}); "
-          f"AdamW on {len(adam_p)} tensors ({n_a:.2f} M, lr {lr})", flush=True)
+          f"aux Adam on {len(adam_p)} tensors ({n_a:.2f} M, lr {lr})", flush=True)
     return SingleDeviceMuonWithAuxAdam(groups)
 
 
