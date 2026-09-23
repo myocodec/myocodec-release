@@ -32,8 +32,6 @@ because SDPA reduces in a different order. Either way the first `W+1` frames gen
 a different key set, so they run on the reference path verbatim and the cache is seeded
 from it.
 
-`tools/bench_streaming.py --verify` checks this against the reference over a real signal.
-
     session = StreamingSession(model, batch_size=1, device="cuda")
     for frame in stream:                      # frame: [B, C, frame_size]
         recon, codes = session.step(frame)

@@ -11,9 +11,6 @@ so a ~1e-4 bf16 difference in the encoder output flips frames sitting near a Vor
 boundary, and because the quantizer is residual the flip compounds down the codebooks
 (match degrades monotonically from codebook 1 to 6). Deploy in fp32 if you need the token
 stream to be reproducible frame-for-frame.
-
-`tests/test_streaming_cache.py` proves the stronger properties directly on the attention
-layer: bounded memory, and zero lookahead to machine precision.
 """
 import argparse, glob, h5py, numpy as np, torch
 # Run directly (`python tools/x.py`) and Python puts this file's own directory on
